@@ -97,7 +97,7 @@ class TransformerAttentionSepModule(nn.Module):
         attn_scores = ops.u_dot_v(graph, queries, keys) / self.head_dim ** 0.5
         attn_probs = edge_softmax(graph, attn_scores)
 
-        message = ops.u_mul_e_sum(graph, values, attn_probs)
+        message = ops.u_mul_e_sum(graph, values, attn_probs)#extra lines in sep
         message = message.reshape(-1, self.dim)
         h = torch.cat([h, message], axis=1)
 
@@ -107,7 +107,7 @@ class TransformerAttentionSepModule(nn.Module):
         return h
 
 
-class GATModule(nn.Module):
+class GATModule(nn.Module):# given
     def __init__(self, dim, hidden_dim_multiplier, num_heads, drop_rate=0, **kwargs):
         super().__init__()
         self.dim = dim
@@ -141,7 +141,7 @@ class GATModule(nn.Module):
         return h
 
 
-class GATSepModule(nn.Module):
+class GATSepModule(nn.Module):# given
     def __init__(self, dim, hidden_dim_multiplier, num_heads, drop_rate=0, **kwargs):
         super().__init__()
         self.dim = dim
@@ -166,10 +166,10 @@ class GATSepModule(nn.Module):
         attn_probs = edge_softmax(graph, attn_scores)
 
         h = h.reshape(-1, self.head_dim, self.num_heads)
-        message = ops.u_mul_e_sum(graph, h, attn_probs)
+        message = ops.u_mul_e_sum(graph, h, attn_probs) # extra lines
         h = h.reshape(-1, self.dim)
         message = message.reshape(-1, self.dim)
-        h = torch.cat([h, message], axis=1)
+        h = torch.cat([h, message], axis=1) # extra lines
 
         h = self.feed_forward_module(graph, h)
 
@@ -205,7 +205,7 @@ class BaseModel(nn.Module):
         return h
 
 
-class GT(BaseModel):
+class GT(BaseModel): # given
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.layers = nn.ModuleList()
@@ -218,7 +218,7 @@ class GT(BaseModel):
                 self.layers.append(residual_module)
 
 
-class GTSep(BaseModel):
+class GTSep(BaseModel):# given
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.layers = nn.ModuleList()

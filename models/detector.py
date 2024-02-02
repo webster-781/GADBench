@@ -1,4 +1,4 @@
-from models.gnn import *
+from models.gnn import * # useful
 from models.attention import *
 from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier
@@ -12,6 +12,11 @@ import pandas as pd
 import itertools
 import psutil, os
 from catboost import Pool, CatBoostClassifier, CatBoostRegressor, sum_models
+
+import dgl.nn as dglnn
+import torch
+import torch.nn as nn
+import torch.nn.functional as F 
 
 
 class BaseDetector(object):
@@ -76,7 +81,7 @@ class BaseGNNDetector(BaseDetector):
             loss = F.cross_entropy(logits[self.train_graph.ndata['train_mask']], train_labels,
                                    weight=torch.tensor([1., self.weight], device=self.labels.device))
             optimizer.zero_grad()
-            loss.backward()
+            loss.backward() 
             optimizer.step()
             if self.model_config['drop_rate'] > 0 or self.train_config['inductive']:
                 self.model.eval()
@@ -99,6 +104,73 @@ class BaseGNNDetector(BaseDetector):
                     break
         return test_score
 
+class BaseNodeClassifierDetector(BaseDetector):
+    def __init__(self, train_config, model_config, data):
+        self.model_config = model_config
+        self.train_config = train_config
+        self.data = data
+        gnn = globals()[model_config['model']]
+        model_config['in_feats'] = self.data[0].ndata['feat'].shape[1]
+        
+        g = data[0]
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        g = g.to(device)
+        features = g.ndata["feat"]
+        labels = g.ndata["label"]
+        masks = g.ndata["train_mask"], g.ndata["val_mask"], g.ndata["test_mask"]
+        g.ndata["feature"] = features
+
+        # create GCN model
+        in_size = features.shape[1]
+        out_size = data.num_classes
+        
+        self.g = g
+        self.labels = labels
+        self.masks = masks
+        self.features = features
+        
+        gnn = globals()[model_config['model']]
+        model_config['in_feats'] = features.shape[1]
+        model_config['num_classes'] = self.data.num_classes
+        self.model = gnn(**model_config).to(train_config['device'])
+    
+    def train(self):
+        # define train/val samples, loss function and optimizer
+        train_mask = self.masks[0]
+        val_mask = self.masks[1]
+        loss_fcn = nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-2, weight_decay=5e-4)
+
+        # training loop
+        for epoch in range(100):
+            self.model.train()
+            logits = self.model(self.g)
+            loss = loss_fcn(logits[train_mask], self.labels[train_mask])
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            acc = self.evaluate(self.g, self.features, self.labels, val_mask, self.model)
+            print(
+                "Epoch {:05d} | Loss {:.4f} | Validation Accuracy {:.4f} ".format(
+                    epoch, loss.item(), acc
+                )
+            )
+        
+        print("Testing...")
+        test_score = self.evaluate(self.g, self.features, self.labels, self.masks[2], self.model)
+        print("Test accuracy {:.4f}".format(acc))
+        test_score = {'ACC': test_score}
+        return test_score
+
+    def evaluate(self, g, features, labels, mask, model):
+        model.eval()
+        with torch.no_grad():
+            logits = model(g)
+            logits = logits[mask]
+            labels = labels[mask]
+            _, indices = torch.max(logits, dim=1)
+            correct = torch.sum(indices == labels)
+            return correct.item() * 1.0 / len(labels)
 
 class CAREGNNDetector(BaseDetector):
     def __init__(self, train_config, model_config, data):
@@ -193,7 +265,7 @@ class NAGNNDetector(BaseDetector):
         return test_score
 
 
-class SVMDetector(BaseDetector):
+class SVMDetector(BaseDetector):# given
     def __init__(self, train_config, model_config, data):
         super().__init__(train_config, model_config, data)
         penalty = 'l2' if 'penalty' not in self.model_config else self.model_config['penalty']
@@ -217,7 +289,7 @@ class SVMDetector(BaseDetector):
         return test_score
 
 
-class KNNDetector(BaseDetector):
+class KNNDetector(BaseDetector):# given
     def __init__(self, train_config, model_config, data):
         super().__init__(train_config, model_config, data)
         k = 5 if 'k' not in self.model_config else self.model_config['k']
@@ -241,7 +313,7 @@ class KNNDetector(BaseDetector):
         return test_score
 
 
-class XGBODDetector(BaseDetector):
+class XGBODDetector(BaseDetector):# given
     def __init__(self, train_config, model_config, data):
         from pyod.models.xgbod import XGBOD
         super().__init__(train_config, model_config, data)
@@ -267,7 +339,7 @@ class XGBODDetector(BaseDetector):
         return test_score
 
 
-class XGBoostDetector(BaseDetector):
+class XGBoostDetector(BaseDetector):# given
     def __init__(self, train_config, model_config, data):
         super().__init__(train_config, model_config, data)
         import xgboost as xgb
@@ -292,7 +364,7 @@ class XGBoostDetector(BaseDetector):
         return test_score
 
 
-class XGBGraphDetector(BaseDetector):
+class XGBGraphDetector(BaseDetector):# given
     def __init__(self, train_config, model_config, data):
         super().__init__(train_config, model_config, data)
         import xgboost as xgb
@@ -324,7 +396,7 @@ class XGBGraphDetector(BaseDetector):
         return test_score
 
 
-class RFDetector(BaseDetector):
+class RFDetector(BaseDetector):# given
     def __init__(self, train_config, model_config, data):
         super().__init__(train_config, model_config, data)
         n_estimators = 100 if 'n_estimators' not in model_config else model_config['n_estimators']
@@ -351,7 +423,7 @@ class RFDetector(BaseDetector):
         return test_score
 
 
-class RFGraphDetector(BaseDetector):
+class RFGraphDetector(BaseDetector):# given
     def __init__(self, train_config, model_config, data):
         super().__init__(train_config, model_config, data)
         n_estimators = 100 if 'n_estimators' not in model_config else model_config['n_estimators']
@@ -385,7 +457,7 @@ class RFGraphDetector(BaseDetector):
         return test_score
 
 
-class GASDetector(BaseDetector):
+class GASDetector(BaseDetector):# given
     def __init__(self, train_config, model_config, data):
         super().__init__(train_config, model_config, data)
         model_config['in_feats'] = self.data.graph.ndata['feature'].shape[1]
@@ -404,7 +476,7 @@ class GASDetector(BaseDetector):
         knn_g = knn_graph(feat, algorithm="bruteforce-sharemem", dist=dist)
         knn_g.ndata["feature"] = feat
 
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.model_config['lr'])
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.model_config['lr'], weight_decay=5e-4)
         train_labels, val_labels, test_labels = self.labels[self.train_mask], \
                                                 self.labels[self.val_mask], self.labels[self.test_mask]
 
@@ -435,7 +507,7 @@ class GASDetector(BaseDetector):
         return test_score
 
 
-class KNNGCNDetector(BaseDetector):
+class KNNGCNDetector(BaseDetector):# given
     def __init__(self, train_config, model_config, data):
         super().__init__(train_config, model_config, data)
         model_config['in_feats'] = self.data.graph.ndata['feature'].shape[1]
@@ -480,7 +552,7 @@ class KNNGCNDetector(BaseDetector):
         return test_score
 
 
-class GHRNDetector(BaseDetector):
+class GHRNDetector(BaseDetector):# given
     def __init__(self, train_config, model_config, data):
         super().__init__(train_config, model_config, data)
         model_config['in_feats'] = self.data.graph.ndata['feature'].shape[1]
@@ -541,7 +613,7 @@ class GHRNDetector(BaseDetector):
         return test_score
 
 
-class PCGNNDetector(BaseDetector):
+class PCGNNDetector(BaseDetector):# given
     def __init__(self, train_config, model_config, data):
         super().__init__(train_config, model_config, data)
         model_config['in_feats'] = self.data.graph.ndata['feature'].shape[1]
@@ -610,7 +682,7 @@ class PCGNNDetector(BaseDetector):
         return test_score
 
 
-class DCIDetector(BaseDetector):
+class DCIDetector(BaseDetector):# given
     def __init__(self, train_config, model_config, data):
         super().__init__(train_config, model_config, data)
         gnn = globals()[model_config['model']]
@@ -810,7 +882,7 @@ class BGNNDetector(BaseDetector):
         return test_score
 
 
-class H2FDetector(BaseDetector):
+class H2FDetector(BaseDetector):# little complicated
     def __init__(self, train_config, model_config, data):
         super().__init__(train_config, model_config, data)
         gnn = globals()[model_config['model']]

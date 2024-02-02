@@ -1,4 +1,4 @@
-import argparse
+import argparse # no train and test information, semisupervised way
 import time
 from utils import *
 import pandas
@@ -7,7 +7,7 @@ import warnings
 warnings.filterwarnings("ignore")
 seed_list = list(range(3407, 10000, 10))
 
-def set_seed(seed=3407):
+def set_seed(seed=3407): 
     os.environ['PYTHONHASHSEED'] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -29,7 +29,7 @@ args = parser.parse_args()
 columns = ['name']
 new_row = {}
 datasets = ['reddit', 'weibo', 'amazon', 'yelp', 'tfinance',
-            'elliptic', 'tolokers', 'questions', 'dgraphfin', 'tsocial', 'hetero/amazon', 'hetero/yelp']
+            'elliptic', 'tolokers', 'questions', 'dgraphfin', 'tsocial',]
 models = model_detector_dict.keys()
 
 if args.datasets is not None:
@@ -97,5 +97,5 @@ for model in models:
         model_result[dataset_name+'-Time'] = time_cost/args.trials
     model_result = pandas.DataFrame(model_result, index=[0])
     results = pandas.concat([results, model_result])
-    file_id = save_results(results, file_id)
+    file_id = save_results(results, file_id, '.')
     print(results)

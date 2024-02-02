@@ -36,6 +36,7 @@ model_detector_dict = {
     'GAT': BaseGNNDetector,
     'GT': BaseGNNDetector,
     'PNA': BaseGNNDetector,
+    'GCNNew': BaseGNNDetector,
     'BGNN': BGNNDetector,
 
     # 'KNNGCN': KNNGCNDetector,
@@ -57,14 +58,14 @@ model_detector_dict = {
 }
 
 
-def save_results(results, file_id):
-    if not os.path.exists('results/'):
-        os.mkdir('results/')
+def save_results(results, file_id, whereto):
+    if not os.path.exists(f'results/{whereto}'):
+        os.mkdir(f'results/{whereto}')
     if file_id is None:
         file_id = 0
-        while os.path.exists('results/{}.xlsx'.format(file_id)):
+        while os.path.exists(f'results/{whereto}/{file_id}.xlsx'):
             file_id += 1
-    results.transpose().to_excel('results/{}.xlsx'.format(file_id))
+    results.transpose().to_excel(f'results/{whereto}/{file_id}.xlsx')
     print('save to file ID: {}'.format(file_id))
     return file_id
 

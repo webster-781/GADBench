@@ -4,6 +4,7 @@ import dgl.function as fn
 import sympy
 import scipy
 import dgl.nn.pytorch.conv as dglnn
+import dgl
 from torch import nn
 from scipy.special import comb
 import math
@@ -199,6 +200,86 @@ class GCN(nn.Module):
                 h = self.dropout(h)
             h = layer(graph, h)
         h = self.mlp(h, False)
+        return h
+
+class GCNNew(nn.Module):
+    def __init__(self, in_feats, h_feats=32, num_classes=2, num_layers=2, mlp_layers=1, dropout_rate=0,
+                 activation='ReLU', **kwargs):
+        super().__init__()
+        self.layers = nn.ModuleList()
+        # two-layer GCN
+        self.layers.append(
+            dglnn.GraphConv(in_feats, h_feats, activation=F.relu)
+        )
+        self.layers.append(dglnn.GraphConv(h_feats, num_classes))
+        self.dropout = nn.Dropout(0.5)
+        
+    def forward(self, g):
+        features = g.ndata['feature']
+        h = features
+        for i, layer in enumerate(self.layers):
+            if i != 0:
+                h = self.dropout(h)
+            h = layer(g, h)
+        return h
+
+
+class RGCN(nn.Module):
+    def __init__(self, in_feats, h_feats=32, num_classes=2, num_layers=2, mlp_layers=1, dropout_rate=0, activation='ReLU', etypes=None, **kwargs):
+        super().__init__()
+        self.h_feats = h_feats
+        self.layers = nn.ModuleList()
+        self.act = getattr(nn, activation)()
+        self.layers.append(dgl.nn.HeteroGraphConv({
+            (st, et, dt) : dglnn.GraphConv(in_feats, h_feats, activation=self.act)
+            for (st, et, dt) in etypes
+        }, aggregate='mean'))
+        self.type = etypes[0][0]
+        for i in range(num_layers-1):
+            self.layers.append(dgl.nn.HeteroGraphConv({
+                (st, et, dt) : dglnn.GraphConv(h_feats, h_feats, activation=self.act)
+                for (st, et, dt) in etypes
+            }, aggregate='mean'))
+        self.mlp = MLP(h_feats, h_feats, num_classes, mlp_layers, dropout_rate)
+        self.dropout = nn.Dropout(dropout_rate) if dropout_rate > 0 else nn.Identity()
+
+    def forward(self, graph):
+        h = {self.type: graph.ndata['feature']}
+        for i, layer in enumerate(self.layers):
+            # print(layer)
+            if i != 0:
+                h[self.type] = self.dropout(h[self.type])
+            # print(graph, h)
+            h = layer(graph, h)
+        h = self.mlp(h[self.type], False)
+        return h
+
+
+class HGT(nn.Module):
+    def __init__(self, in_feats, h_feats=32, num_heads=1, num_classes=2, num_layers=2, mlp_layers=1, dropout_rate=0.2, activation='ReLU', etypes=None, **kwargs):
+        super().__init__()
+        self.h_feats = h_feats
+        self.layers = nn.ModuleList()
+        self.act = getattr(nn, activation)()
+        self.input_linear = nn.Linear(in_feats, h_feats)
+        self.type = etypes[0][0]
+        for i in range(num_layers):
+            self.layers.append(dgl.nn.HGTConv(h_feats, h_feats // num_heads,
+                    num_heads, 1, len(etypes), dropout=dropout_rate))
+        self.mlp = MLP(h_feats, h_feats, num_classes, mlp_layers, dropout_rate)
+        self.graph = None
+
+    def forward(self, graph):
+        if self.graph is None:
+            self.graph = dgl.to_homogeneous(graph, ndata=['feature'])
+        h = self.graph.ndata['feature']
+        graph = self.graph
+        h = self.input_linear(h)
+        for i, layer in enumerate(self.layers):
+            h = layer(graph, h, graph.ndata[dgl.NTYPE], graph.edata[dgl.ETYPE])
+            h = self.act(h)
+        h = self.mlp(h, False)
+        # print( graph.ndata[dgl.NTYPE], graph.edata[dgl.ETYPE])
         return h
 
 
@@ -576,7 +657,7 @@ class CAREConv(nn.Module):
             return self.linear(h_homo)
 
 
-class GraphConsis(nn.Module):
+class CAREGNN(nn.Module):
     def __init__(self, in_feats, num_classes=2, h_feats=64, edges=None, num_layers=1, activation=None, step_size=0.02, **kwargs):
         super().__init__()
         self.in_feats = in_feats
