@@ -3,3 +3,7 @@ datasets/
 modes/__pycache__/
 catboost_info/
 results/
+results_old/
+.ipynb_checkpoints/
+models/.ipynb_checkpoints/
+*.out
